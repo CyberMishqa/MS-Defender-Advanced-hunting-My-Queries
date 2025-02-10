@@ -1,0 +1,28 @@
+let BruteForceAttempts = IdentityLogonEvents
+| where ActionType == "LogonFailed"
+| summarize FailedAttempts = count() by AccountName, IPAddress, Location, bin(Timestamp, 1h)
+| where FailedAttempts > 5
+| project AccountName, IPAddress, Location, FailedAttempts;
+let MalwareDetections = DeviceEvents
+| where ActionType in ("AntivirusDetection", "AntivirusMalwareBlocked")
+| project Timestamp, DeviceName, ActionType, AccountName, InitiatingProcessCommandLine, 
+InitiatingProcessFileName, FileName, FolderPath, InitiatingProcessFolderPath, ProcessCreationTime, AdditionalFields;
+let QuarantinedFiles = DeviceFileEvents
+| where ActionType == "FileQuarantined"
+| project DeviceId, FileName, QuarantineState = "Quarantined";
+MalwareDetections
+| join kind=leftouter (QuarantinedFiles) on FileName
+| join kind=leftouter (BruteForceAttempts) on AccountName
+| project Timestamp, DeviceName, ActionType, AccountName, AccountName1 ,InitiatingProcessCommandLine, 
+InitiatingProcessFileName, FileName, FolderPath, InitiatingProcessFolderPath, ProcessCreationTime, AdditionalFields, QuarantineState, 
+IPAddress, Location, FailedAttempts
+| extend MalwareState = case(
+    isnotempty(QuarantineState), "Quarantined",
+    AdditionalFields contains "running", "Running",
+    "Detected"
+)
+| union (
+    BehaviorInfo
+    | where Categories has_any ("SuspiciousActivity", "Malware", "")
+    | project Timestamp, Description, Categories, StartTime, EndTime, DetectionSource, ActionType, AttackTechniques, ServiceSource, AccountUpn
+)
