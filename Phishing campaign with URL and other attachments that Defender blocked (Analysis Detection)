@@ -1,0 +1,21 @@
+let suspicious_emails = EmailEvents
+| where ThreatTypes has_any('Phish', 'Spam', 'None')
+| where RecipientEmailAddress endswith '' // Enter the recipient's email address
+| summarize recipient_count = dcount(RecipientEmailAddress) by NetworkMessageId, SenderFromAddress, Subject, ThreatTypes, Timestamp
+| where recipient_count >= 20;
+let emails_with_urls = 
+EmailUrlInfo
+| where NetworkMessageId in (suspicious_emails)
+| summarize urls = make_set(Url) by NetworkMessageId;
+
+let suspicious_emails = 
+EmailEvents
+| where RecipientEmailAddress endswith "" // Enter the recipient's email address
+| where ThreatTypes has_any ("Phish", "Spam", "None")
+| summarize RecipientCount = dcount(RecipientEmailAddress) by SenderFromAddress, NetworkMessageId
+| where RecipientCount >= 20;
+suspicious_emails
+| join kind=inner (EmailUrlInfo | project NetworkMessageId, Url) on NetworkMessageId
+| join kind=inner (EmailAttachmentInfo | project NetworkMessageId, FileName) on NetworkMessageId
+| join EmailEvents on NetworkMessageId
+| project Timestamp, SenderFromAddress, RecipientEmailAddress, ThreatTypes, Url, FileName, DeliveryAction, DeliveryLocation
